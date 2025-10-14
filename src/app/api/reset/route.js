@@ -7,7 +7,7 @@ export async function POST(request) {
   if (!token || !password) {
     return NextResponse.json({ error: "Token and password required" }, { status: 400 });
   }
-  const ok = resetPasswordWithToken(token, password);
+  const ok = await resetPasswordWithToken(token, password);
   if (!ok) return NextResponse.json({ error: "Invalid or expired token" }, { status: 400 });
   return NextResponse.json({ ok: true });
 }

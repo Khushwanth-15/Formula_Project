@@ -2,8 +2,20 @@ This is a [Next.js](https://nextjs.org/) project bootstrapped with [`create-next
 
 ## Getting Started
 
-First, run the development server:
+### Prerequisites
 
+1. Create a `.env` file in the root directory with the following variables:
+```env
+DATABASE_URL=postgresql://neondb_owner:npg_2KsFfgeXqUJ1@ep-raspy-hall-a1gn32ev-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require
+AUTH_SECRET=your-secret-key-change-me-in-production
+```
+
+2. Set up the database:
+```bash
+npm run db:push
+```
+
+3. Run the development server:
 ```bash
 npm run dev
 # or
@@ -15,6 +27,13 @@ bun dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+
+### Database Commands
+
+- `npm run db:generate` - Generate Prisma client
+- `npm run db:push` - Push schema changes to database
+- `npm run db:migrate` - Create and apply migrations
+- `npm run db:studio` - Open Prisma Studio (database GUI)
 
 You can start editing the page by modifying `app/page.js`. The page auto-updates as you edit the file.
 

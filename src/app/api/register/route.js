@@ -8,7 +8,7 @@ export async function POST(request) {
     if (!name || !email || !password) {
       return NextResponse.json({ error: "Missing fields" }, { status: 400 });
     }
-    const user = createUser({ name, email, password });
+    const user = await createUser({ name, email, password });
     const token = signJwt({ sub: user.id, email: user.email, name: user.name });
     const res = NextResponse.json({ user });
     res.cookies.set("auth_token", token, {

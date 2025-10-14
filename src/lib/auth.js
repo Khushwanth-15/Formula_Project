@@ -1,40 +1,8 @@
-import fs from "fs";
-import path from "path";
 import crypto from "crypto";
+import { prisma } from "./db.js";
 
-const USERS_FILE_PATH = path.join(process.cwd(), "src", "data", "users.json");
 const JWT_ALG = "HS256"; // HMAC-SHA256
 const DEFAULT_JWT_EXP_SECONDS = 60 * 60 * 24 * 7; // 7 days
-
-function ensureUsersFile() {
-  const dir = path.dirname(USERS_FILE_PATH);
-  if (!fs.existsSync(dir)) {
-    fs.mkdirSync(dir, { recursive: true });
-  }
-  if (!fs.existsSync(USERS_FILE_PATH)) {
-    fs.writeFileSync(USERS_FILE_PATH, JSON.stringify([] , null, 2));
-  }
-}
-
-export function readUsers() {
-  ensureUsersFile();
-  const content = fs.readFileSync(USERS_FILE_PATH, "utf8");
-  try {
-    const parsed = JSON.parse(content || "[]");
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-export function writeUsers(users) {
-  ensureUsersFile();
-  fs.writeFileSync(USERS_FILE_PATH, JSON.stringify(users, null, 2));
-}
-
-export function generateId() {
-  return crypto.randomUUID();
-}
 
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString("hex");
@@ -102,60 +70,102 @@ export function verifyJwt(token) {
   }
 }
 
-export function findUserByEmail(email) {
-  const users = readUsers();
-  return users.find(u => u.email.toLowerCase() === String(email || "").toLowerCase());
-}
-
-export function createUser({ name, email, password }) {
-  const users = readUsers();
-  if (users.find(u => u.email.toLowerCase() === email.toLowerCase())) {
-    throw new Error("User already exists");
+export async function findUserByEmail(email) {
+  try {
+    const user = await prisma.user.findUnique({
+      where: { email: String(email || "").toLowerCase() }
+    });
+    return user;
+  } catch (error) {
+    console.error('Error finding user by email:', error);
+    return null;
   }
-  const user = {
-    id: generateId(),
-    name,
-    email,
-    passwordHash: hashPassword(password),
-    createdAt: new Date().toISOString(),
-    resetToken: null,
-    resetTokenExp: null,
-  };
-  users.push(user);
-  writeUsers(users);
-  return { id: user.id, name: user.name, email: user.email };
 }
 
-export function authenticateUser(email, password) {
-  const user = findUserByEmail(email);
-  if (!user) return null;
-  if (!verifyPassword(password, user.passwordHash)) return null;
-  return { id: user.id, name: user.name, email: user.email };
+export async function createUser({ name, email, password }) {
+  try {
+    // Check if user already exists
+    const existingUser = await prisma.user.findUnique({
+      where: { email: email.toLowerCase() }
+    });
+    
+    if (existingUser) {
+      throw new Error("User already exists");
+    }
+
+    const user = await prisma.user.create({
+      data: {
+        name,
+        email: email.toLowerCase(),
+        passwordHash: hashPassword(password),
+      }
+    });
+
+    return { id: user.id, name: user.name, email: user.email };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    throw error;
+  }
 }
 
-export function issueResetToken(email) {
-  const users = readUsers();
-  const idx = users.findIndex(u => u.email.toLowerCase() === String(email || "").toLowerCase());
-  if (idx === -1) return null;
-  const token = crypto.randomBytes(24).toString("hex");
-  const exp = Date.now() + 1000 * 60 * 15; // 15 minutes
-  users[idx].resetToken = token;
-  users[idx].resetTokenExp = exp;
-  writeUsers(users);
-  return { token, exp };
+export async function authenticateUser(email, password) {
+  try {
+    const user = await findUserByEmail(email);
+    if (!user) return null;
+    if (!verifyPassword(password, user.passwordHash)) return null;
+    return { id: user.id, name: user.name, email: user.email };
+  } catch (error) {
+    console.error('Error authenticating user:', error);
+    return null;
+  }
 }
 
-export function resetPasswordWithToken(token, newPassword) {
-  const users = readUsers();
-  const idx = users.findIndex(u => u.resetToken === token);
-  if (idx === -1) return false;
-  const user = users[idx];
-  if (!user.resetTokenExp || Date.now() > user.resetTokenExp) return false;
-  users[idx].passwordHash = hashPassword(newPassword);
-  users[idx].resetToken = null;
-  users[idx].resetTokenExp = null;
-  writeUsers(users);
-  return true;
+export async function issueResetToken(email) {
+  try {
+    const user = await findUserByEmail(email);
+    if (!user) return null;
+
+    const token = crypto.randomBytes(24).toString("hex");
+    const exp = new Date(Date.now() + 1000 * 60 * 15); // 15 minutes
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        resetToken: token,
+        resetTokenExp: exp
+      }
+    });
+
+    return { token, exp: exp.getTime() };
+  } catch (error) {
+    console.error('Error issuing reset token:', error);
+    return null;
+  }
+}
+
+export async function resetPasswordWithToken(token, newPassword) {
+  try {
+    const user = await prisma.user.findFirst({
+      where: { resetToken: token }
+    });
+
+    if (!user) return false;
+    if (!user.resetTokenExp || Date.now() > user.resetTokenExp.getTime()) return false;
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: hashPassword(newPassword),
+        resetToken: null,
+        resetTokenExp: null
+      }
+    });
+
+    return true;
+  } catch (error) {
+    console.error('Error resetting password:', error);
+    return false;
+  }
 }
 
 
